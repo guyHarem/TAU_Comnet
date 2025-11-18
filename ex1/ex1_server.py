@@ -139,7 +139,7 @@ def main():
     
     ## SERVER RUN ##
     while (True):
-        readable, writeable, _ = select.select(rlist, wlist, [], 1)
+        readable, writeable, _ = select.select(rlist, wlist, [], 0.001)
         
         ## NEW CLIENT ACCEPT ##
         if server_socket in readable:

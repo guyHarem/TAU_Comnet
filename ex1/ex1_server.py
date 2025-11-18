@@ -190,7 +190,7 @@ def command_handler(command_data):
             # Validate plaintext contains only letters and spaces
             for char in plaintext:
                 if not (char.isalpha() or char.isspace()):
-                    return "error: invalid input"  # Assignment requirement
+                    return "error: invalid input\n"  # Assignment requirement
             
             # Encrypt and return result
             answer = caesar(plaintext, X)

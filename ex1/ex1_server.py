@@ -31,6 +31,10 @@ def parentheses(X):
     """
     Check if a string of parentheses is balanced.
     
+    A balanced string means:
+    - Every opening '(' has a matching closing ')'
+    - Closing ')' never appears before its matching opening '('
+    
     Args:
         X (str): String containing only '(' and ')' characters
         
@@ -42,23 +46,28 @@ def parentheses(X):
         "the parentheses are balanced: yes"
         >>> parentheses("(()")
         "the parentheses are balanced: no"
+        >>> parentheses(")(")
+        "the parentheses are balanced: no"
         >>> parentheses("abc")
         "ERROR: The string isn't only parentheses"
     """
-    L_PAREN = 0  # Left parentheses counter
-    R_PAREN = 0  # Right parentheses counter
+    open_count = 0  # Counter for unmatched opening parentheses
     
     # Check each character
     for char in X:
         if char not in '()':
             return "ERROR: The string isn't only parentheses"
         elif char == '(':
-            L_PAREN += 1
-        else:
-            R_PAREN += 1
+            open_count += 1  # Found opening - increment counter
+        else:  # char == ')'
+            open_count -= 1  # Found closing - decrement counter
+            
+            # If counter goes negative, we have a closing ')' without matching '('
+            if open_count < 0:
+                return "the parentheses are balanced: no"
     
-    # Check if counts match
-    if L_PAREN == R_PAREN:
+    # At the end, counter should be 0 (all opens matched with closes)
+    if open_count == 0:
         return "the parentheses are balanced: yes"
     else:
         return "the parentheses are balanced: no"

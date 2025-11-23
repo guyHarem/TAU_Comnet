@@ -18,6 +18,16 @@ Usage:
 
 Example:
     python ex1_server.py users_list.txt 8080
+
+Authentication Protocol:
+    - Client sends: "User: <username>"
+    - Server replies: "OK"
+    - Client sends: "Password: <password>"
+    - Server replies: success or failure message
+
+Command Format:
+    - All commands must be sent as: "command: parameters"
+    - On invalid input or authentication failure, the server responds with an error and may disconnect the client.
 """
 
 import sys
@@ -40,16 +50,6 @@ def parentheses(X):
         
     Returns:
         str: Success message indicating if balanced (yes/no), or error message
-        
-    Example:
-        >>> parentheses("(())")
-        "the parentheses are balanced: yes"
-        >>> parentheses("(()")
-        "the parentheses are balanced: no"
-        >>> parentheses(")(")
-        "the parentheses are balanced: no"
-        >>> parentheses("abc")
-        "ERROR: The string isn't only parentheses"
     """
     open_count = 0  # Counter for unmatched opening parentheses
     
@@ -76,41 +76,31 @@ def parentheses(X):
 def caesar(plaintext, X):
     """
     Encrypt plaintext using Caesar cipher with shift X.
-    
+    Only English letters are allowed. Output is all lowercase.
+
     Args:
-        plaintext (str): Text containing only letters and spaces
-        X (int): Shift amount (can be positive or negative)
-        
+        plaintext (str): The text to encrypt (letters and spaces only)
+        X (int): The shift amount (can be positive or negative)
+
     Returns:
-        str: Encrypted ciphertext
-        
-    Example:
-        >>> caesar("hello", 3)
-        "khoor"
-        >>> caesar("Hello World", 1)
-        "Ifmmp Xpsme"
-        >>> caesar("abc", -1)
-        "zab"
+        str: The encrypted text in all lowercase, or an error message if input is invalid
     """
     result = ""
-    
     for char in plaintext:
-        if char.isalpha():  # Letter character
-            # Determine if lowercase or uppercase and set base character
-            base = ord('a') if char.islower() else ord('A')
-            
-            # Get position in alphabet (0-25)
-            pos = ord(char) - base
-            
-            # Apply shift and wrap around using modulo 26
-            new_pos = (pos + X) % 26
-            
-            # Convert back to character
-            new_char = chr(new_pos + base)
-            result += new_char
-        else:  # Space character
+        if char.isalpha():
+            # Only allow English letters
+            if ('a' <= char.lower() <= 'z'):
+                base = ord('a')
+                pos = ord(char.lower()) - base
+                new_pos = (pos + X) % 26
+                new_char = chr(new_pos + base)
+                result += new_char
+            else:
+                return "error: invalid input\n"  # Non-English letter
+        elif char.isspace():
             result += char
-    
+        else:
+            return "error: invalid input\n"  # Not a letter or space
     return result
 
 
@@ -131,23 +121,21 @@ def command_handler(command_data):
         quit - Signal disconnect
         
     Returns None for:
-        - Invalid command format (missing ':')
         - Unknown command
         - quit command
-    """
-    # Check for valid command format
+    """    
+    command_data = command_data.strip()
+    
+    if command_data == "quit":
+        return None
+    
     if ':' not in command_data:
-        return None  # Invalid format - disconnect client
+        return "ERROR: Invalid command format\n"
     
-    # Split command name and parameters
-    parts = command_data.split(':')
-    command_name = parts[0].strip()
-    params_raw = parts[1]  # Safe: guaranteed to exist from ':' check
-    
-    match command_name:
+    match command_data.split(':', 1)[0].strip():
         case "parentheses":
             # Extract parameter
-            X = params_raw.strip()
+            X = command_data.split(':', 1)[1].strip()
             if not X:
                 return "ERROR: parentheses requires a parameter\n"
             
@@ -157,7 +145,7 @@ def command_handler(command_data):
         
         case "lcm":
             # Parse two integer parameters
-            params_list = params_raw.strip().split()
+            params_list = command_data.split(':', 1)[1].strip().split()
             if len(params_list) != 2:
                 return "ERROR: lcm requires exactly 2 parameters\n"
             
@@ -174,7 +162,7 @@ def command_handler(command_data):
         
         case "caesar":
             # Parse plaintext and shift (split from right to handle spaces in plaintext)
-            params_list = params_raw.strip().rsplit(' ', 1)
+            params_list = command_data.split(':', 1)[1].strip().rsplit(' ', 1)
             
             if len(params_list) != 2:
                 return "ERROR: caesar requires plaintext and shift\n"
@@ -196,13 +184,8 @@ def command_handler(command_data):
             answer = caesar(plaintext, X)
             return f"The ciphertext is: {answer}\n"
         
-        case "quit":
-            # Signal to disconnect client
-            return None
-        
         case _:
-            # Unknown command - disconnect client
-            return None
+            return "ERROR: Unknown command\n"
 
 
 def main():
@@ -222,7 +205,8 @@ def main():
     # Configuration
     welcome_msg = "Welcome! Please log in.\n"
     buffer_size = 1024
-    timeout = 0.001  # Select timeout in seconds
+    timeout = 5  # Select timeout in seconds
+    
     
     # Validate command-line arguments
     if len(sys.argv) < 2:
@@ -264,7 +248,9 @@ def main():
     # Initialize socket lists for select()
     rlist = [server_socket]  # Sockets to monitor for reading
     wlist = []  # Sockets to monitor for writing (unused - immediate sends)
-    
+    client_states = {}      # client_sock: 'waiting_username' | 'waiting_password' | 'authenticated'
+    client_usernames = {}   # client_sock: username (while authenticating)
+
     # Main server loop
     while True:
         # Monitor sockets for activity
@@ -274,9 +260,10 @@ def main():
         # Handle new client connections
         if server_socket in readable:
             client_socket, client_address = server_socket.accept()
-            rlist.append(client_socket)  # Add to monitoring list
+            rlist.append(client_socket)
             client_socket.send(welcome_msg.encode())
-        
+            client_states[client_socket] = 'waiting_username'
+
         # Handle existing client sockets
         for client_sock in readable:
             # Skip the server socket (already handled above)
@@ -287,68 +274,62 @@ def main():
                 # Check if client disconnected
                 if not client_data:
                     rlist.remove(client_sock)
+                    client_states.pop(client_sock, None)
+                    client_usernames.pop(client_sock, None)
                     client_sock.close()
-                else:
-                    # Authentication loop - allow unlimited retries
-                    logged_in = False
-                    
-                    while not logged_in:
-                        try:
-                            # Parse login credentials
-                            # Expected format: "User: username\nPassword: password"
-                            decoded_data = client_data.decode()
-                            lines = decoded_data.split('\n')
-                            username = lines[0].split(':')[1].strip()
-                            password = lines[1].split(':')[1].strip()
-                            
-                            # Verify credentials
-                            if username in users_dict and users_dict[username] == password:
-                                # Successful login
-                                client_sock.send(f"Hi {username}, good to see you\n".encode())
-                                logged_in = True
-                                
-                                # Command processing loop
-                                while True:
-                                    command_data = client_sock.recv(buffer_size)
-                                    
-                                    # Client disconnected
-                                    if not command_data:
-                                        break
-                                    
-                                    # Process command
-                                    response = command_handler(command_data.decode())
-                                    
-                                    # None response means quit or invalid command
-                                    if response is None:
-                                        rlist.remove(client_sock)
-                                        client_sock.close()
-                                        break
-                                    
-                                    # Send response to client
-                                    client_sock.send(response.encode())
-                            
-                            else:
-                                # Failed login - allow retry
-                                client_sock.send("Failed to login.\n".encode())
-                                
-                                # Wait for client to retry
-                                client_data = client_sock.recv(buffer_size)
-                                if not client_data:  # Client gave up
-                                    rlist.remove(client_sock)
-                                    client_sock.close()
-                                    break
-                        
-                        except (IndexError, ValueError) as e:
-                            # Invalid login format - allow retry
-                            client_sock.send("Invalid login format\n".encode())
-                            
-                            # Wait for client to retry
-                            client_data = client_sock.recv(buffer_size)
-                            if not client_data:  # Client gave up
-                                rlist.remove(client_sock)
-                                client_sock.close()
-                                break
+                    continue
 
+                state = client_states.get(client_sock, 'waiting_username')
+
+                if state == 'waiting_username':
+                    # Expecting: "User: username"
+                    try:
+                        decoded = client_data.decode()
+                        username = decoded.split(':', 1)[1].strip()
+                        client_usernames[client_sock] = username
+                        client_states[client_sock] = 'waiting_password'
+                        client_sock.send(b'OK')
+                    except Exception:
+                        client_sock.send(b'Invalid login format\n')
+                        rlist.remove(client_sock)
+                        client_states.pop(client_sock, None)
+                        client_usernames.pop(client_sock, None)
+                        client_sock.close()
+
+                elif state == 'waiting_password':
+                    # Expecting: "Password: password"
+                    try:
+                        decoded = client_data.decode()
+                        password = decoded.split(':', 1)[1].strip()
+                        username = client_usernames.get(client_sock)
+                        if username in users_dict and users_dict[username] == password:
+                            client_sock.send(f"Hi {username}, good to see you\n".encode())
+                            client_states[client_sock] = 'authenticated'
+                            client_usernames.pop(client_sock, None)
+                        else:
+                            client_sock.send(b'Failed to login.\n')
+                            client_states[client_sock] = 'waiting_username'
+                            client_usernames.pop(client_sock, None)
+                    except Exception:
+                        client_sock.send(b'Invalid login format\n')
+                        rlist.remove(client_sock)
+                        client_states.pop(client_sock, None)
+                        client_usernames.pop(client_sock, None)
+                        client_sock.close()
+
+                elif state == 'authenticated':
+                    response = command_handler(client_data.decode())
+                    if response is None:
+                        rlist.remove(client_sock)
+                        client_states.pop(client_sock, None)
+                        client_sock.close()
+                    elif response.lower().startswith("error:"): ## only because of caesar error message
+                        client_sock.send(response.encode())
+                        rlist.remove(client_sock)
+                        client_states.pop(client_sock, None)
+                        client_sock.close()
+                    else:
+                        client_sock.send(response.encode())
 
 if __name__ == "__main__":
     main()

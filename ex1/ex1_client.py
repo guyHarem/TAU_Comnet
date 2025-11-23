@@ -48,6 +48,7 @@ def main():
     
     # Configuration
     buffer_size = 1024  # Maximum bytes to receive at once
+    timeout = 5 # Timeout time for select() calls
     
     # Default connection parameters
     hostname = "localhost"  # Default server hostname
@@ -64,7 +65,8 @@ def main():
     # Create TCP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
-    ## LOGIN SEQUENCE ##
+    
+    ## LOGIN SEQUENCE(INCLUDE AUTHENTICATION) ##
     try:
         # Connect to server
         sock.connect((hostname, port))
@@ -75,28 +77,42 @@ def main():
         
         # Authentication loop - retry until success
         while True:
-            # Get credentials from user
             username = input("Username: ")
+            
+            user_info = f"User: {username}\n"
+            sock.send(user_info.encode()) #send user info
+            
+            readable, _, _, = select.select([sock], [], [], timeout)
+            
+            if not readable:
+                print("Server Timeout - closing connection")
+                sock.close()
+                sys.exit(1)
+            
+            ack = sock.recv(buffer_size).decode() ##server response to get username info
+            
+            if ack.strip() != "OK":
+                print("Unexpected server response - closing connection")
+                sock.close()
+                sys.exit(1)
+            
             password = input("Password: ")
+            pass_info = f"Password: {password}\n"
+            sock.send(pass_info.encode())
             
-            # Format credentials according to protocol
-            # Format: "User: <username>\nPassword: <password>"
-            user_info = f"User: {username}\nPassword: {password}"
+            readable, _, _, = select.select([sock], [], [], timeout)
             
-            # Send credentials to server
-            sock.send(user_info.encode())
-            
-            # Receive authentication response
+            if not readable:
+                print("Server Timeout - closing connection")
+                sock.close()
+                sys.exit(1)
+                
             in_msg = sock.recv(buffer_size).decode()
-            
-            # Check authentication result
-            if in_msg == "Failed to login.\n":
-                print(in_msg, end='')  # Display error and retry
-            else:
-                # Successful login - display welcome message and exit loop
-                print(in_msg, end='')  # Success message from server
-                break
-            
+            print(in_msg, end='')
+        
+            if in_msg != "Failed to login.\n":
+                break ## Seccessful login - break authentication an move to main loop
+                
     except ConnectionRefusedError as e:
         # Server is not running or unreachable
         print("Couldn't connect to server")
@@ -123,9 +139,17 @@ def main():
         if not in_msg:  # Empty response means server closed connection
             print("Server disconnected")
             break
+        
+        decoded_msg = in_msg.decode()
+          
+        if decoded_msg.lower().startswith("error:"):
+            print(decoded_msg, end='')
+            print("Connection closed due to error.")
+            sock.close()
+            sys.exit(1)
+        
         else:
             # Display server response
-            decoded_msg = in_msg.decode()
             print(decoded_msg, end='')  # Server responses include newlines
     
     # Clean up - close socket

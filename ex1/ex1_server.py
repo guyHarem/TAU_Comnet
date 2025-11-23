@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 """
 Multi-Client TCP Server with Authentication and Command Processing
 

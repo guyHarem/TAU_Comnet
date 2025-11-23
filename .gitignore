@@ -1,32 +1,23 @@
-# Byte-compiled / optimized / DLL files
+# OS
+.DS_Store
+Thumbs.db
+#Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
 
-# VS Code settings
-.vscode/
-
-# Mac system files
-.DS_Store
-
-# Environment files
-.env
-.venv/
-env/
+#Virtual env
 venv/
+env/
+ENV/
 
-# User-specific files
+#IDE
+.vscode/
+.idea/
 *.swp
 *.swo
-
-# Log files
-*.log
-
-# Test output
-*.out
-
-# Backup files
 *~
-
-# Ignore users_list.txt if you want to keep credentials private
-# users_list.txt
